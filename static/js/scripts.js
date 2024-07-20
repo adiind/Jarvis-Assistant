@@ -24,10 +24,12 @@ $(document).ready(function() {
     function sendMessage() {
         var userMessage = $('#user-message').val();
         if (userMessage.trim() !== '') {
-            appendMessage(userMessage, 'user');
+            appendMessage(userMessage, 'user');  // Display user message without characters initially
             $('#user-message').val('');
 
             showTypingIndicator();
+
+            var startTime = new Date().getTime();  // Start time measurement
 
             $.ajax({
                 url: '/chat',
@@ -35,10 +37,21 @@ $(document).ready(function() {
                 contentType: 'application/json',
                 data: JSON.stringify({ message: userMessage, assistant: selectedAssistant }),
                 success: function(response) {
+                    var endTime = new Date().getTime();  // End time measurement
+                    var totalTime = (endTime - startTime) / 1000;  // Total time in seconds
+
+                    console.log("Response from server: ", response);  // Debugging step
                     var aiMessage = response.message;
                     var audioPath = response.audio_path;
+                    var assistantCharacters = response.assistant_characters;
+                    var serverResponseTime = response.response_time;
+                    var backendCharsPerSecond = response.backend_chars_per_second;
+
+                    // Calculate frontend characters per second
+                    var frontendCharsPerSecond = assistantCharacters / totalTime;
+
                     hideTypingIndicator();
-                    appendMessage(aiMessage, 'ai', audioPath);
+                    appendMessage(aiMessage, 'ai', audioPath, assistantCharacters, totalTime, frontendCharsPerSecond, backendCharsPerSecond);
                     $('#chat-box').scrollTop($('#chat-box')[0].scrollHeight);
                 },
                 error: function() {
@@ -50,8 +63,25 @@ $(document).ready(function() {
         }
     }
 
-    function appendMessage(message, sender, audioPath = null) {
+    function appendMessage(message, sender, audioPath = null, characters = null, totalTime = null, frontendCharsPerSecond = null, backendCharsPerSecond = null) {
         var messageElement = $('<div class="message card-panel"></div>').text(message);
+        if (characters !== null) {
+            var characterElement = $('<div class="character-count" style="font-size: 0.8em; color: darkgrey;"></div>').text(`Characters: ${characters}`);
+            messageElement.append(characterElement);
+        }
+        if (totalTime !== null) {
+            var totalTimeElement = $('<div class="total-time" style="font-size: 0.8em; color: darkgrey;"></div>').text(`Total Time: ${totalTime.toFixed(2)}s`);
+            messageElement.append(totalTimeElement);
+        }
+        if (frontendCharsPerSecond !== null) {
+            var frontendCharsPerSecondElement = $('<div class="frontend-chars-per-second" style="font-size: 0.8em; color: darkgrey;"></div>').text(`Frontend Chars/Sec: ${frontendCharsPerSecond.toFixed(2)}`);
+            messageElement.append(frontendCharsPerSecondElement);
+        }
+        if (backendCharsPerSecond !== null) {
+            var backendCharsPerSecondElement = $('<div class="backend-chars-per-second" style="font-size: 0.8em; color: darkgrey;"></div>').text(`Backend Chars/Sec: ${backendCharsPerSecond.toFixed(2)}`);
+            messageElement.append(backendCharsPerSecondElement);
+        }
+
         if (sender === 'user') {
             messageElement.addClass('user-message');
         } else {

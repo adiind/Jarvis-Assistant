@@ -10,7 +10,12 @@ app = Flask(__name__)
 app.secret_key = os.urandom(24)  # Secure secret key
 
 # Initialize OpenAI
-client = OpenAI(api_key=OPENAI_API_KEY)
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+if not OPENAI_API_KEY:
+    raise ValueError("No OPENAI_API_KEY found in environment variables")
+OpenAI.api_key = OPENAI_API_KEY
+# Initialize OpenAI
+client = OpenAI()
 
 # Define assistants with corresponding voice models
 assistants = {
@@ -60,7 +65,7 @@ def get_assistant(assistant_name):
         assistant = client.beta.assistants.create(
             name=assistant_name.capitalize(),
             instructions=assistant_info["instructions"],
-            model="gpt-4o",
+            model="gpt-4o-mini",
         )
         assistant_info["id"] = assistant.id
 
@@ -80,6 +85,9 @@ def wait_on_run(run, thread):
 def index():
     return render_template('index.html')
 
+def count_words(text):
+    return len(text)
+
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.json
@@ -95,7 +103,8 @@ def chat():
         session['thread_id'] = thread.id
         conversation_history[thread.id] = []
         thread_id = thread.id
-
+     # Start the timer
+    start_time = time.time()
     # Add user message to history
     conversation_history[thread_id].append({"role": "user", "content": user_message})
 
@@ -106,6 +115,8 @@ def chat():
         content=user_message
     )
 
+   
+
     # Create a run
     run = client.beta.threads.runs.create(
         thread_id=thread_id,
@@ -114,6 +125,13 @@ def chat():
 
     # Wait for run completion
     run = wait_on_run(run, thread_id)
+
+    # End the timer
+    end_time = time.time()
+
+
+    # Calculate response time
+    response_time = end_time - start_time
 
     # Get assistant's message
     messages = client.beta.threads.messages.list(thread_id=thread_id)
@@ -124,12 +142,21 @@ def chat():
 
     # Add assistant message to history
     conversation_history[thread_id].append({"role": "assistant", "content": assistant_message})
+    
+    user_tokens = count_words(user_message)
+    assistant_characters = count_words(assistant_message)
+    backend_chars_per_second = assistant_characters / response_time
 
     # Generate and cache speech audio
     speech_file_path = generate_speech(assistant_message, assistant_info['voice'], thread_id)
 
-    return jsonify({'message': assistant_message, 'audio_path': speech_file_path})
-
+    return jsonify({
+        'message': assistant_message,
+        'audio_path': speech_file_path,
+        'assistant_characters': assistant_characters,
+        'response_time': response_time,
+        'backend_chars_per_second': backend_chars_per_second
+    })
 @app.route('/speech/<thread_id>/<filename>')
 def get_speech(thread_id, filename):
     return send_file(f"speech_cache/{thread_id}/{filename}", mimetype="audio/mpeg")
@@ -151,7 +178,6 @@ def generate_speech(text, voice, thread_id):
             input=text,
         )
         response.stream_to_file(speech_file_path)
-
     return f"/speech/{thread_id}/{speech_file_name}"
 
 if __name__ == "__main__":
